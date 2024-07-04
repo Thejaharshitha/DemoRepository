@@ -1,0 +1,72 @@
+import mlflow
+import sklearn
+from mlflow.utils import PYTHON_VERSION
+from mlflow.utils.file_utils import TempDir
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+import os,joblib
+import pandas as pd
+import numpy as np
+
+
+CONDA_ENV_TEMPLATE = """
+name: Forecasting_Latency
+channels:
+  - defaults
+  - anaconda
+  - conda-forge
+dependencies:
+  - python=={python_version}
+  - scikit-learn=={sklearn_version}
+"""
+
+class sentimental_analysis(object):
+    
+    def __init__(self, l_svc,tf):
+        self._model = l_svc
+        self.tf=tf
+
+
+    def predict(self, data):
+        """Predict method"""
+        #data cleaning
+        data = self.tf.transform(data)
+        prediction = self._model.predict(data)
+        print(prediction)
+        return prediction  
+    
+    
+def log_model(l_svc,tf,artifact_path, model_name):
+    print("inside log model")
+    with TempDir() as tmp:
+        data_path = tmp.path(model_name)
+        os.mkdir(data_path)
+        joblib.dump(l_svc, data_path + "/l_svc.pkl")
+        joblib.dump(tf, data_path + "/tf.pkl")
+        conda_env = tmp.path("conda_env.yaml")
+        with open(conda_env, "w") as temp_file:
+            temp_file.write(CONDA_ENV_TEMPLATE.format(python_version=PYTHON_VERSION, \
+                                                      sklearn_version=sklearn.__version__))
+        mlflow.pyfunc.log_model(artifact_path=artifact_path,
+                                loader_module=__name__,
+                                code_path=[__file__, ],
+                                data_path=data_path,
+                                conda_env=conda_env)
+
+
+
+def _load_pyfunc(path):
+    """overwrite mlflow load pyfunc module"""
+    tf = joblib.load(path+"/tf.pkl")
+    l_svc = joblib.load(path+"/l_svc.pkl")
+    return sentimental_analysis(l_svc,tf)
+
+=====================
+from train import create_model
+
+FILE='train.tsv'
+EXP_ID = None
+
+run_id = create_model(FILE)
+
+print("Run id {}".format(run_id))

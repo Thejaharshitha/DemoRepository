@@ -1,0 +1,109 @@
+from sklearn.feature_extraction.text import TfidfVectorizer
+import pandas as pd
+import re
+from nltk.corpus import stopwords
+import matplotlib.pyplot as plt
+import string
+import nltk
+import warnings
+warnings.filterwarnings("ignore")
+#nltk.download('stopwords')
+stop = set(stopwords.words("english"))
+from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.model_selection import train_test_split
+from pred import log_model
+from sklearn import metrics
+import mlflow
+
+
+
+
+class datacleaning:
+    
+    def remove_URL(self,text):
+        url = re.compile(r"https?://\S+|www\.\S+")
+        return url.sub(r"", text)
+
+    def remove_html(self,text):
+        html = re.compile(r"<.*?>")
+        return html.sub(r"", text)
+
+    def remove_emoji(self,string):
+        emoji_pattern = re.compile(
+            "["
+            u"\U0001F600-\U0001F64F"  # emoticons
+            u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+            u"\U0001F680-\U0001F6FF"  # transport & map symbols
+            u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
+            u"\U00002702-\U000027B0"
+            u"\U000024C2-\U0001F251"
+            "]+",
+            flags=re.UNICODE,
+        )
+        return emoji_pattern.sub(r"", string)
+
+    def remove_punct(self,text):
+        table = str.maketrans("", "", string.punctuation)
+        return text.translate(table)
+
+    def remove_stopwords(text):
+        text = [word.lower() for word in text.split() if word.lower() not in stop]
+
+        return " ".join(text)
+
+
+
+
+class modelcreation(datacleaning):  
+    
+    def TfidfVectorizr(self,df):
+        tf = TfidfVectorizer()
+        Phrase_text = tf.fit_transform(df['Phrase'])
+        return Phrase_text,tf
+        
+    def prepare_dataset(self,Phrase_text,df):
+        from sklearn.model_selection import train_test_split
+        Xtrain, Xtest, ytrain, ytest = train_test_split(Phrase_text, df['Sentiment'], test_size=0.25, random_state=3)
+        return Xtrain, Xtest, ytrain, ytest
+        
+    def train_model(self,Xtrain, Xtest, ytrain, ytest):
+        from sklearn.svm import LinearSVC
+        l_svc = LinearSVC().fit(Xtrain, ytrain)
+        ypred = l_svc.predict(Xtest)
+        print("LinearSVC accuracy:", metrics.accuracy_score(ytest, ypred))
+        #f1 score
+        return l_svc,ypred
+
+
+
+    
+def create_model(path):
+    print("inside create model2")
+    df=pd.read_table(path)
+    
+    
+    mn=modelcreation()
+    
+    df["Phrase"] = df.Phrase.map(lambda x: mn.remove_URL(x))
+    df["Phrase"] = df.Phrase.map(lambda x: mn.remove_html(x))
+    df["Phrase"] = df.Phrase.map(lambda x: mn.remove_emoji(x))
+    df["Phrase"] = df.Phrase.map(lambda x: mn.remove_punct(x))
+    #df["Phrase"] = df["Phrase"].map(mn.remove_stopwords)
+    
+   
+    
+    Phrase_text,tf=mn.TfidfVectorizr(df)
+    Xtrain, Xtest, ytrain, ytest = mn.prepare_dataset(Phrase_text,df)
+    l_svc,ypred=mn.train_model(Xtrain, Xtest, ytrain, ytest)
+    print("LinearSVC accuracy:", metrics.accuracy_score(ytest, ypred))
+    
+    
+    
+    with mlflow.start_run():
+        log_model(l_svc,tf,artifact_path="model", model_name="sentimental_analysis")
+        #log matrix score and f1 score.
+         
+        run_id = mlflow.active_run().info.run_id
+        return run_id
+
+
